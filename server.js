@@ -4,8 +4,15 @@ import fetch from 'node-fetch'; // Importa node-fetch como un módulo ES
 import { JSDOM } from 'jsdom';
 import cors from 'cors';
 
+// Habilita CORS para todas las solicitudes
+app.use(cors({
+  origin: '*', // Permite solicitudes desde cualquier origen
+  methods: ['GET'], // Solo permite solicitudes GET
+}));
+
 const app = express();
-const PORT = 3000;
+// const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Habilita CORS para todas las solicitudes
 app.use(cors());
