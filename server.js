@@ -4,7 +4,6 @@ import fetch from 'node-fetch'; // Importa node-fetch como un módulo ES
 import { JSDOM } from 'jsdom';
 import cors from 'cors';
 
-
 const app = express();
 const PORT = 3000;
 
@@ -33,19 +32,20 @@ app.get('/devotional', async (req, res) => {
 
     // Extraer el título, contenido y fecha del devocional
     const title = document.querySelector('.daily-suptitle')?.textContent.trim() || 'Título no disponible';
-    const content = document.querySelector('.daily-content')?.innerHTML || 'Contenido no disponible';
+    let content = document.querySelector('.daily-content')?.innerHTML || 'Contenido no disponible';
     const date = document.querySelector('.daily-date')?.textContent.trim() || 'Fecha no disponible';
 
     console.log('Datos extraídos:', { title, content, date }); // Mensaje de depuración
 
-    // Limpiar el contenido HTML
-    const cleanedContent = content
-      .replace(/<\/?p>/g, '')
-      .replace(/<\/?strong>/g, '')
-      .replace(/<br\s*\/?>/gi, '\n');
+    // Limpiar el contenido HTML para eliminar direcciones y enlaces
+    content = content
+      .replace(/<a[^>]*>.*?<\/a>/g, '') // Elimina todos los enlaces (<a>)
+      .replace(/<\/?p>/g, '')           // Elimina las etiquetas <p>
+      .replace(/<\/?strong>/g, '')      // Elimina las etiquetas <strong>
+      .replace(/<br\s*\/?>/gi, '\n');   // Convierte <br> en saltos de línea
 
     // Devolver los datos como JSON
-    res.json({ title, content: cleanedContent, date });
+    res.json({ title, content: content.trim(), date });
   } catch (error) {
     console.error('Error al cargar el devocional:', error.message);
     res.status(500).json({ error: 'No se pudo cargar el devocional' });
