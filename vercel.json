@@ -18,7 +18,7 @@
     },
     {
       "src": "/api/subscribe",
-      "dest": "server.js",
+      "dest": "api/subscribe.js",
       "methods": ["POST", "OPTIONS"]
     },
     {
@@ -31,19 +31,20 @@
       "dest": "server.js"
     }
   ],
-  
-    "headers": [
-      {
-        "source": "/api/subscribe",
-        "headers": [
-          { 
-            "key": "Access-Control-Allow-Origin", 
-            "value": "https://mision-vida-app.web.app, http://localhost:5501, http://127.0.0.1:5501"
-          },
-          { "key": "Access-Control-Allow-Methods", "value": "POST, OPTIONS" },
-          { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" },
-          { "key": "Access-Control-Allow-Credentials", "value": "true" }
-        ]
-      }
-    ]
-  }
+  "headers": [
+    {
+      "source": "/api/subscribe",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "https://mision-vida-app.web.app" },
+        { "key": "Access-Control-Allow-Methods", "value": "POST, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type" }
+      ]
+    },
+    {
+      "source": "/devotional",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
+    }
+  ]
+}
