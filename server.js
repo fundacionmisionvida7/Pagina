@@ -13,9 +13,10 @@ const PORT = process.env.PORT || 3000;
 
 // Configuración CORS actualizada
 const allowedOrigins = [
-  'https://mision-vida-app.web.app', // Dominio Firebase
-  'http://localhost:5501', // Desarrollo local
-  'https://mision-vida-app.web.app' // Tu PWA en producción
+  'https://mision-vida-app.web.app',
+  'http://localhost:5501',
+  'http://127.0.0.1:5501', // 👈 ¡Agrega esta línea!
+  'https://palabra-del-dia-backend.vercel.app'
 ];
 
 app.use(cors({
