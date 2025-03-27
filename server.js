@@ -3,67 +3,79 @@ import cors from 'cors';
 import webPush from 'web-push';
 import fetch from 'node-fetch';
 import { JSDOM } from 'jsdom';
-import fs from 'fs/promises';
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 import 'dotenv/config';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SUBSCRIPTIONS_FILE = 'subscriptions.json';
 
-// ================= CONFIGURACIÓN INICIAL =================
-const allowedOrigins = [
-  'https://mision-vida-app.web.app',
-  'http://127.0.0.1:5501',
-  'http://localhost:5501'
-];
+// ================= CONFIGURACIÓN FIREBASE =================
+const firebaseConfig = {
+  credential: cert({
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
+  })
+};
 
-// Middlewares
-app.use(express.json());
-app.use(cors({
-  origin: allowedOrigins,
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+const adminApp = initializeApp(firebaseConfig);
+const db = getFirestore(adminApp);
 
-// Configuración WebPush
+// ================= CONFIGURACIÓN WEB-PUSH =================
 webPush.setVapidDetails(
   'mailto:contacto@misionvida.com',
   process.env.VAPID_PUBLIC_KEY,
   process.env.VAPID_PRIVATE_KEY
 );
 
-// ================= HELPERS =================
+// ================= CONFIGURACIÓN CORS =================
+const allowedOrigins = [
+  'https://mision-vida-app.web.app',
+  'http://127.0.0.1:5501',
+  'http://localhost:5501'
+];
+
+app.use(cors({
+  origin: allowedOrigins,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+app.use(express.json());
+
+// ================= HELPERS FIREBASE =================
 const loadSubscriptions = async () => {
-  try {
-    const data = await fs.readFile(SUBSCRIPTIONS_FILE, 'utf8');
-    return JSON.parse(data);
-  } catch (error) {
-    return [];
-  }
+  const snapshot = await db.collection('subscriptions').get();
+  return snapshot.docs.map(doc => doc.data());
 };
 
-const saveSubscriptions = async (subscriptions) => {
-  await fs.writeFile(SUBSCRIPTIONS_FILE, JSON.stringify(subscriptions, null, 2));
+const saveSubscription = async (subscription) => {
+  await db.collection('subscriptions')
+    .doc(subscription.keys.auth)
+    .set(subscription);
 };
 
-// ================= ENDPOINTS MEJORADOS =================
+const deleteSubscription = async (authKey) => {
+  await db.collection('subscriptions')
+    .doc(authKey)
+    .delete();
+};
 
-// Estado del servicio
+// ================= ENDPOINTS =================
 app.get('/', (req, res) => {
   res.json({
     status: 'online',
     service: 'Palabra del Día Backend',
     version: '2.0',
-    subscriptions: allowedOrigins
+    firebaseProject: process.env.FIREBASE_PROJECT_ID
   });
 });
 
-// Suscripciones (Versión mejorada)
 app.post('/api/subscribe', async (req, res) => {
   try {
     const { subscription } = req.body;
     
-    // Validación reforzada
     if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
       return res.status(400).json({ 
         error: 'Estructura de suscripción inválida',
@@ -71,13 +83,17 @@ app.post('/api/subscribe', async (req, res) => {
       });
     }
 
-    const subscriptions = await loadSubscriptions();
-    
-    // Evitar duplicados
-    const exists = subscriptions.some(s => s.endpoint === subscription.endpoint);
-    if (exists) {
+    // Verificar existencia en Firestore
+    const doc = await db.collection('subscriptions')
+      .doc(subscription.keys.auth)
+      .get();
+
+    if (doc.exists) {
       return res.status(409).json({ error: 'Suscripción ya registrada' });
     }
+
+    // Guardar en Firestore
+    await saveSubscription(subscription);
 
     // Enviar notificación de confirmación
     await webPush.sendNotification(subscription, JSON.stringify({
@@ -86,14 +102,10 @@ app.post('/api/subscribe', async (req, res) => {
       icon: '/icon-192x192.png'
     }));
 
-    // Guardar suscripción
-    subscriptions.push(subscription);
-    await saveSubscriptions(subscriptions);
-
     res.status(201).json({ 
       success: true,
       message: 'Suscripción exitosa',
-      totalSubscriptions: subscriptions.length
+      totalSubscriptions: (await loadSubscriptions()).length
     });
 
   } catch (error) {
@@ -105,7 +117,6 @@ app.post('/api/subscribe', async (req, res) => {
   }
 });
 
-// Devocional diario (Versión optimizada)
 app.get('/devotional', async (req, res) => {
   try {
     const sourceUrl = 'https://www.bibliaon.com/es/palabra_del_dia/';
@@ -135,7 +146,6 @@ app.get('/devotional', async (req, res) => {
   }
 });
 
-// Envío de notificaciones (Versión completa)
 app.get('/send-daily', async (req, res) => {
   try {
     const [devotionalResponse, subscriptions] = await Promise.all([
@@ -153,7 +163,6 @@ app.get('/send-daily', async (req, res) => {
       url: '/'
     };
 
-    // Enviar notificaciones en paralelo
     const results = await Promise.all(
       subscriptions.map(async (sub) => {
         try {
@@ -161,9 +170,7 @@ app.get('/send-daily', async (req, res) => {
           return { status: 'success', endpoint: sub.endpoint };
         } catch (error) {
           if (error.statusCode === 410) {
-            // Eliminar suscripción expirada
-            const updatedSubs = subscriptions.filter(s => s.endpoint !== sub.endpoint);
-            await saveSubscriptions(updatedSubs);
+            await deleteSubscription(sub.keys.auth);
           }
           return { 
             status: 'error', 
@@ -194,5 +201,5 @@ app.get('/send-daily', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Servidor activo en puerto ${PORT}`);
   console.log('🔐 Clave VAPID pública:', process.env.VAPID_PUBLIC_KEY?.substring(0, 15) + '...');
-  console.log('📝 Suscripciones activas:', loadSubscriptions().then(subs => subs.length));
+  console.log('📦 Proyecto Firebase:', process.env.FIREBASE_PROJECT_ID);
 });
