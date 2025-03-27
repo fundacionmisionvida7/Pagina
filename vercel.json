@@ -13,8 +13,28 @@
       "methods": ["POST", "OPTIONS"]
     },
     {
+      "src": "/devotional",
+      "dest": "server.js",
+      "methods": ["GET"]
+    },
+    {
+      "src": "/send-daily",
+      "dest": "server.js",
+      "methods": ["GET"]
+    },
+    {
       "src": "/(.*)",
       "dest": "server.js"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
     }
   ]
 }
