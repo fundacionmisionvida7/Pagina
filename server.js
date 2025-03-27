@@ -40,6 +40,7 @@ webPush.setVapidDetails(
 // POST /api/subscribe (Versión mejorada)
 // En el endpoint POST /api/subscribe
 app.post('/api/subscribe', async (req, res) => {
+    console.log('Nueva suscripción:', req.body.subscription);
   try {
     const { subscription } = req.body;
     
