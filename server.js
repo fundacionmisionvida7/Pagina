@@ -38,12 +38,25 @@ webPush.setVapidDetails(
 // ================= ENDPOINTS =================
 
 // POST /api/subscribe (Versión mejorada)
+// En el endpoint POST /api/subscribe
 app.post('/api/subscribe', async (req, res) => {
   try {
     const { subscription } = req.body;
     
-    if (!subscription?.endpoint) {
-      return res.status(400).json({ error: 'Suscripción inválida' });
+    // Validación mejorada
+    if (!subscription?.keys?.p256dh || !subscription?.keys?.auth) {
+      return res.status(400).json({ 
+        error: 'Suscripción inválida: Faltan claves de cifrado' 
+      });
+    }
+
+    // Convertir claves a Buffer
+    const p256dh = Buffer.from(subscription.keys.p256dh, 'base64url');
+    const auth = Buffer.from(subscription.keys.auth, 'base64url');
+
+    // Validar longitud de claves
+    if (p256dh.length !== 65) {
+      throw new Error(`La clave p256dh debe tener 65 bytes (Recibidos: ${p256dh.length})`);
     }
 
     await webPush.sendNotification(subscription, JSON.stringify({
@@ -53,12 +66,12 @@ app.post('/api/subscribe', async (req, res) => {
     }));
 
     res.status(201).json({ success: true });
-    
+
   } catch (error) {
     console.error('Error en suscripción:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error al procesar la suscripción',
-      details: error.message 
+      details: error.message
     });
   }
 });
