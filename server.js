@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 import webPush from 'web-push';
@@ -9,6 +10,24 @@ import 'dotenv/config';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+
+import 'dotenv/config';
+
+// Validación de variables
+const requiredEnvVars = [
+  'FIREBASE_PROJECT_ID',
+  'FIREBASE_CLIENT_EMAIL',
+  'FIREBASE_PRIVATE_KEY',
+  'VAPID_PUBLIC_KEY',
+  'VAPID_PRIVATE_KEY'
+];
+
+requiredEnvVars.forEach(varName => {
+  if (!process.env[varName]) {
+    throw new Error(`❌ Falta la variable de entorno: ${varName}`);
+  }
+});
 
 // ================= CONFIGURACIÓN FIREBASE =================
 const firebaseConfig = {
