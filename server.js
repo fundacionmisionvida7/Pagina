@@ -1,4 +1,7 @@
 
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });  // Fuerza carga desde archivo específico
+
 import express from 'express';
 import cors from 'cors';
 import webPush from 'web-push';
