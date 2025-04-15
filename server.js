@@ -6,6 +6,8 @@ import { JSDOM } from 'jsdom';
 import fs from 'fs/promises';
 import 'dotenv/config';
 
+import { db } from './firebaseAdmin.js'; // reemplaza el uso de subscriptions.json
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const SUBSCRIPTIONS_FILE = 'subscriptions.json';
@@ -62,48 +64,38 @@ app.get('/', (req, res) => {
 app.post('/api/subscribe', async (req, res) => {
   try {
     const { subscription } = req.body;
-    
-    // Validación reforzada
+
     if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
-      return res.status(400).json({ 
-        error: 'Estructura de suscripción inválida',
-        required: ['endpoint', 'keys.p256dh', 'keys.auth']
-      });
+      return res.status(400).json({ error: 'Suscripción inválida' });
     }
 
-    const subscriptions = await loadSubscriptions();
-    
-    // Evitar duplicados
-    const exists = subscriptions.some(s => s.endpoint === subscription.endpoint);
-    if (exists) {
+    const subsRef = db.collection('pushSubscriptions');
+    const existing = await subsRef.where('endpoint', '==', subscription.endpoint).get();
+    if (!existing.empty) {
       return res.status(409).json({ error: 'Suscripción ya registrada' });
     }
 
-    // Enviar notificación de confirmación
+    await subsRef.add({
+      ...subscription,
+      createdAt: new Date().toISOString()
+    });
+
     await webPush.sendNotification(subscription, JSON.stringify({
       title: '✅ Notificaciones Activadas',
       body: 'Recibirás la Palabra del Día cada mañana',
       icon: '/icon-192x192.png'
     }));
 
-    // Guardar suscripción
-    subscriptions.push(subscription);
-    await saveSubscriptions(subscriptions);
-
-    res.status(201).json({ 
-      success: true,
-      message: 'Suscripción exitosa',
-      totalSubscriptions: subscriptions.length
-    });
+    res.status(201).json({ success: true, message: 'Suscripción guardada' });
 
   } catch (error) {
-    console.error('Error en suscripción:', error);
-    res.status(500).json({
-      error: 'Error al procesar la suscripción',
-      details: error.message
-    });
+    console.error('Error al guardar suscripción:', error);
+    res.status(500).json({ error: 'Fallo al guardar suscripción', details: error.message });
   }
 });
+
+
+
 
 // Devocional diario (Versión optimizada)
 app.get('/devotional', async (req, res) => {
@@ -138,11 +130,7 @@ app.get('/devotional', async (req, res) => {
 // Envío de notificaciones (Versión completa)
 app.get('/send-daily', async (req, res) => {
   try {
-    const [devotionalResponse, subscriptions] = await Promise.all([
-      fetch('https://palabra-del-dia-backend.vercel.app/devotional'),
-      loadSubscriptions()
-    ]);
-
+    const devotionalResponse = await fetch('https://palabra-del-dia-backend.vercel.app/devotional');
     if (!devotionalResponse.ok) throw new Error('Error al obtener devocional');
     
     const devotionalData = await devotionalResponse.json();
@@ -153,42 +141,33 @@ app.get('/send-daily', async (req, res) => {
       url: '/'
     };
 
-    // Enviar notificaciones en paralelo
-    const results = await Promise.all(
-      subscriptions.map(async (sub) => {
-        try {
-          await webPush.sendNotification(sub, JSON.stringify(notificationPayload));
-          return { status: 'success', endpoint: sub.endpoint };
-        } catch (error) {
-          if (error.statusCode === 410) {
-            // Eliminar suscripción expirada
-            const updatedSubs = subscriptions.filter(s => s.endpoint !== sub.endpoint);
-            await saveSubscriptions(updatedSubs);
-          }
-          return { 
-            status: 'error', 
-            endpoint: sub.endpoint, 
-            error: error.message 
-          };
+    const snapshot = await db.collection('pushSubscriptions').get();
+    const subscriptions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    const results = await Promise.all(subscriptions.map(async (sub) => {
+      try {
+        await webPush.sendNotification(sub, JSON.stringify(notificationPayload));
+        return { status: 'success', endpoint: sub.endpoint };
+      } catch (error) {
+        if (error.statusCode === 410 || error.statusCode === 404) {
+          await db.collection('pushSubscriptions').doc(sub.id).delete();
         }
-      })
-    );
+        return { status: 'error', endpoint: sub.endpoint, error: error.message };
+      }
+    }));
 
     res.json({
       sent: results.filter(r => r.status === 'success').length,
       failed: results.filter(r => r.status === 'error').length,
-      activeSubscriptions: subscriptions.length,
       details: results
     });
 
   } catch (error) {
     console.error('Error en send-daily:', error);
-    res.status(500).json({
-      error: 'Error al enviar notificaciones',
-      details: error.message
-    });
+    res.status(500).json({ error: 'Error al enviar notificaciones', details: error.message });
   }
 });
+
 
 // Iniciar servidor
 app.listen(PORT, () => {
