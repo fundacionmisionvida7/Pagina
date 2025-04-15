@@ -128,12 +128,15 @@ app.get('/devotional', async (req, res) => {
 });
 
 // Envío de notificaciones (Versión completa)
+import admin from './firebaseAdmin.js'; // Asegúrate de tener esta línea al inicio
+
 app.get('/send-daily', async (req, res) => {
   try {
     const devotionalResponse = await fetch('https://palabra-del-dia-backend.vercel.app/devotional');
     if (!devotionalResponse.ok) throw new Error('Error al obtener devocional');
-    
+
     const devotionalData = await devotionalResponse.json();
+
     const notificationPayload = {
       title: devotionalData.title,
       body: devotionalData.content.substring(0, 120) + '...',
@@ -141,16 +144,20 @@ app.get('/send-daily', async (req, res) => {
       url: '/'
     };
 
-    const snapshot = await db.collection('pushSubscriptions').get();
+    // 🔥 Obtener las suscripciones desde Firestore
+    const db = admin.firestore();
+    const snapshot = await db.collection('subscriptions').get();
     const subscriptions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
+    // 📤 Enviar las notificaciones
     const results = await Promise.all(subscriptions.map(async (sub) => {
       try {
         await webPush.sendNotification(sub, JSON.stringify(notificationPayload));
         return { status: 'success', endpoint: sub.endpoint };
       } catch (error) {
+        // 🔧 Eliminar suscripciones inválidas (ej: si el usuario borró los permisos)
         if (error.statusCode === 410 || error.statusCode === 404) {
-          await db.collection('pushSubscriptions').doc(sub.id).delete();
+          await db.collection('subscriptions').doc(sub.id).delete();
         }
         return { status: 'error', endpoint: sub.endpoint, error: error.message };
       }
@@ -167,6 +174,7 @@ app.get('/send-daily', async (req, res) => {
     res.status(500).json({ error: 'Error al enviar notificaciones', details: error.message });
   }
 });
+
 
 
 // Iniciar servidor
