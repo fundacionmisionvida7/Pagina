@@ -1,18 +1,16 @@
+// server.js
 import express from 'express';
 import cors from 'cors';
 import webPush from 'web-push';
 import fetch from 'node-fetch';
 import { JSDOM } from 'jsdom';
-import fs from 'fs/promises';
 import 'dotenv/config';
 
-import { db } from './firebaseAdmin.js'; // reemplaza el uso de subscriptions.json
+import admin from './firebaseAdmin.js'; // Asegúrate de que este archivo existe en la raíz
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SUBSCRIPTIONS_FILE = 'subscriptions.json';
 
-// ================= CONFIGURACIÓN INICIAL =================
 const allowedOrigins = [
   'https://mision-vida-app.web.app',
   'http://127.0.0.1:5501',
@@ -34,33 +32,21 @@ webPush.setVapidDetails(
   process.env.VAPID_PRIVATE_KEY
 );
 
-// ================= HELPERS =================
-const loadSubscriptions = async () => {
-  try {
-    const data = await fs.readFile(SUBSCRIPTIONS_FILE, 'utf8');
-    return JSON.parse(data);
-  } catch (error) {
-    return [];
-  }
-};
+//
+// ENDPOINTS
+//
 
-const saveSubscriptions = async (subscriptions) => {
-  await fs.writeFile(SUBSCRIPTIONS_FILE, JSON.stringify(subscriptions, null, 2));
-};
-
-// ================= ENDPOINTS MEJORADOS =================
-
-// Estado del servicio
+// 1. Estado del servicio
 app.get('/', (req, res) => {
   res.json({
     status: 'online',
     service: 'Palabra del Día Backend',
     version: '2.0',
-    subscriptions: allowedOrigins
+    allowedOrigins: allowedOrigins
   });
 });
 
-// Suscripciones (Versión mejorada)
+// 2. Endpoint para recibir y guardar suscripciones (se guardan en la colección "pushSubscriptions")
 app.post('/api/subscribe', async (req, res) => {
   try {
     const { subscription } = req.body;
@@ -69,9 +55,11 @@ app.post('/api/subscribe', async (req, res) => {
       return res.status(400).json({ error: 'Suscripción inválida' });
     }
 
+    const db = admin.firestore();
     const subsRef = db.collection('pushSubscriptions');
-    const existing = await subsRef.where('endpoint', '==', subscription.endpoint).get();
-    if (!existing.empty) {
+    // Verifica si ya existe una suscripción con ese endpoint
+    const existingSnapshot = await subsRef.where('endpoint', '==', subscription.endpoint).get();
+    if (!existingSnapshot.empty) {
       return res.status(409).json({ error: 'Suscripción ya registrada' });
     }
 
@@ -80,6 +68,7 @@ app.post('/api/subscribe', async (req, res) => {
       createdAt: new Date().toISOString()
     });
 
+    // Envía notificación de confirmación a la suscripción
     await webPush.sendNotification(subscription, JSON.stringify({
       title: '✅ Notificaciones Activadas',
       body: 'Recibirás la Palabra del Día cada mañana',
@@ -87,28 +76,22 @@ app.post('/api/subscribe', async (req, res) => {
     }));
 
     res.status(201).json({ success: true, message: 'Suscripción guardada' });
-
   } catch (error) {
     console.error('Error al guardar suscripción:', error);
     res.status(500).json({ error: 'Fallo al guardar suscripción', details: error.message });
   }
 });
 
-
-
-
-// Devocional diario (Versión optimizada)
+// 3. Endpoint para obtener el devocional diario (desde bibliaon.com)
 app.get('/devotional', async (req, res) => {
   try {
     const sourceUrl = 'https://www.bibliaon.com/es/palabra_del_dia/';
     const response = await fetch(sourceUrl);
-    
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    
     const html = await response.text();
     const { document } = new JSDOM(html).window;
 
-    const extractContent = (selector) => 
+    const extractContent = (selector) =>
       document.querySelector(selector)?.textContent.trim() || '';
 
     res.json({
@@ -117,7 +100,6 @@ app.get('/devotional', async (req, res) => {
       date: extractContent('.daily-date') || new Date().toLocaleDateString(),
       source: sourceUrl
     });
-
   } catch (error) {
     console.error('Error en devocional:', error);
     res.status(500).json({
@@ -127,9 +109,7 @@ app.get('/devotional', async (req, res) => {
   }
 });
 
-// Envío de notificaciones (Versión completa)
-import admin from './firebaseAdmin.js'; // Asegúrate de tener esta línea al inicio
-
+// 4. Endpoint para enviar notificaciones (send-daily) leyendo las suscripciones desde Firestore
 app.get('/send-daily', async (req, res) => {
   try {
     const devotionalResponse = await fetch('https://palabra-del-dia-backend.vercel.app/devotional');
@@ -144,20 +124,20 @@ app.get('/send-daily', async (req, res) => {
       url: '/'
     };
 
-    // 🔥 Obtener las suscripciones desde Firestore
     const db = admin.firestore();
-    const snapshot = await db.collection('subscriptions').get();
+    // Usamos la colección "pushSubscriptions"
+    const snapshot = await db.collection('pushSubscriptions').get();
     const subscriptions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    // 📤 Enviar las notificaciones
+    // Enviar notificaciones a cada suscripción
     const results = await Promise.all(subscriptions.map(async (sub) => {
       try {
         await webPush.sendNotification(sub, JSON.stringify(notificationPayload));
         return { status: 'success', endpoint: sub.endpoint };
       } catch (error) {
-        // 🔧 Eliminar suscripciones inválidas (ej: si el usuario borró los permisos)
+        // Eliminar suscripciones inválidas (por ejemplo, si ya no existen)
         if (error.statusCode === 410 || error.statusCode === 404) {
-          await db.collection('subscriptions').doc(sub.id).delete();
+          await db.collection('pushSubscriptions').doc(sub.id).delete();
         }
         return { status: 'error', endpoint: sub.endpoint, error: error.message };
       }
@@ -168,18 +148,25 @@ app.get('/send-daily', async (req, res) => {
       failed: results.filter(r => r.status === 'error').length,
       details: results
     });
-
   } catch (error) {
     console.error('Error en send-daily:', error);
     res.status(500).json({ error: 'Error al enviar notificaciones', details: error.message });
   }
 });
 
-
-
 // Iniciar servidor
 app.listen(PORT, () => {
   console.log(`🚀 Servidor activo en puerto ${PORT}`);
   console.log('🔐 Clave VAPID pública:', process.env.VAPID_PUBLIC_KEY?.substring(0, 15) + '...');
-  console.log('📝 Suscripciones activas:', loadSubscriptions().then(subs => subs.length));
+
+  // Para depuración: contar suscripciones en Firestore
+  (async () => {
+    try {
+      const db = admin.firestore();
+      const snapshot = await db.collection('pushSubscriptions').get();
+      console.log('📝 Suscripciones activas:', snapshot.size);
+    } catch (error) {
+      console.error('Error al contar suscripciones:', error);
+    }
+  })();
 });
