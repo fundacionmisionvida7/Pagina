@@ -5,7 +5,7 @@ import fetch from 'node-fetch';
 
 // Nota: Para obtener el dominio actual en Vercel puedes usar la variable de entorno VERCEL_URL. 
 // Si no está configurada, reemplaza 'https://tu-dominio.vercel.app' por la URL correcta de tu proyecto.
-const DOMAIN = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://tu-dominio.vercel.app';
+const DOMAIN = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://palabra-del-dia-backend.vercel.app/send-daily';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
