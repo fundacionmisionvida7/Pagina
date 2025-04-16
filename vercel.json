@@ -2,38 +2,42 @@
   "version": 2,
   "builds": [
     {
-      "src": "server.js",
+      "src": "api/**/*.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "public/**/*",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
     {
       "src": "/api/subscribe",
-      "dest": "server.js",
+      "dest": "api/subscribe.js",
       "methods": ["POST", "OPTIONS"]
     },
     {
-      "src": "/devotional",
-      "dest": "server.js",
+      "src": "/api/devotional",
+      "dest": "api/devotional.js",
       "methods": ["GET"]
     },
     {
-      "src": "/send-daily",
-      "dest": "server.js",
+      "src": "/api/send-daily",
+      "dest": "api/send-daily.js",
       "methods": ["GET"]
     },
     {
       "src": "/(.*)",
-      "dest": "server.js"
+      "dest": "public/$1"
     }
   ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Frame-Options", "value": "https://mision-vida-app.web.app" },
-        { "key": "X-Content-Type-Options", "value": "POST, OPTIONS" },
-        { "key": "Referrer-Policy", "value": "Content-Type" }
+        { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
       ]
     }
   ]
