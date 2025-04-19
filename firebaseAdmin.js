@@ -1,8 +1,6 @@
 // firebaseAdmin.js
 import admin from 'firebase-admin';
 
-console.log("FIREBASE_SERVICE_ACCOUNT:", process.env.FIREBASE_SERVICE_ACCOUNT); // Agrega este log temporalmente
-
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 if (!admin.apps.length) {
